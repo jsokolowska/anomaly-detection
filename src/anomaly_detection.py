@@ -4,9 +4,9 @@ from scipy.spatial.distance import cdist
 
 
 class ClusterBasedAnomalyDetection:
-    def __init__(self, clustering_estimator, dissimilarity_measure, measure_args: dict = None,
-                 handle_outliers: str = "error"):
+    def __init__(self, clustering_estimator, dissimilarity_measure, measure_args: dict = None, threshold=0.9):
         """
+        Class for anomaly detection based on clustering
 
         :param clustering_estimator: Base clustering algorithm to perform data clustering. Should follow standard
         sklearn API conventions - fit() and predict() methods. Should have ``labels_`` attribute. If ``cluster_centers``
@@ -22,52 +22,16 @@ class ClusterBasedAnomalyDetection:
 
         :param measure_args: Additional arguments for cblof or ldcof measures. Ignored if callable is passed as dissimilarity
         measure.
-
-        #todo implement this
-        :param handle_outliers: How to handle cases in which clustering algorithm returns outliers in cluster detection.
-        Possible values: "error" (default) or "remap" (maps each outlier detected by algorithm to its own cluster).
         """
         self._estimator = clustering_estimator
         self._validate_measure(dissimilarity_measure)
         self._measure = dissimilarity_measure
-        self._measure_args = measure_args
+        self._threshold = threshold
 
-    def _validate_measure(self, dissimilarity_measure):
-        if dissimilarity_measure == "cblof":
-            return
-        elif dissimilarity_measure == "ldcof":
-            return
-        elif callable(dissimilarity_measure):
-            return
+        if measure_args is None:
+            self._measure_args = {}
         else:
-            raise ValueError(f"Expected callable or one of [cblof, ldcof], but got {type(dissimilarity_measure)}")
-
-    def _cblof(self, X):
-        # todo handle mismatch in cluster counts & handle detected anomalies - maybe param
-        cblof_clf = CBLOF(**self._measure_args, clustering_estimator=self._estimator)
-        cblof_clf.fit(X)
-        return cblof_clf.predict(X)
-
-    def _ldcof(self, X):
-        # TODO  perform clustering and divide clusters into large and small ones based on alpha and beta
-        alpha = 0.9
-        if "alpha" in self._measure_args.keys():
-            alpha = self._measure_args["alpha"]
-
-        beta = 5
-        if "beta" in self._measure_args.keys():
-            beta = self._measure_args["beta"]
-
-        scores = LDCOF(alpha=alpha, beta=beta, clustering_estimator=self._estimator).decision_function(X)
-        pass
-
-    def _custom_measure(self, X):
-        self._estimator.fit(X)
-        # todo perform clustering
-        # apply measure fun & threshold
-        scores = self._measure(X, self._estimator.labels_)
-
-        return self._measure(X, self._estimator.labels_)
+            self._measure_args = measure_args
 
     def decision_fun(self, X):
         """
@@ -91,10 +55,42 @@ class ClusterBasedAnomalyDetection:
         :return: np.ndarray of 0s (not an anomaly) and 1s (an anomaly)
         """
         scores = self.decision_fun(X)
-        return self.apply_threshold(scores)
+        return self._apply_threshold(scores)
 
-    def apply_threshold(self, scores):
-        pass
+    def _validate_measure(self, dissimilarity_measure):
+        if dissimilarity_measure == "cblof":
+            return
+        elif dissimilarity_measure == "ldcof":
+            return
+        elif callable(dissimilarity_measure):
+            return
+        else:
+            raise ValueError(f"Expected callable or one of [cblof, ldcof], but got {dissimilarity_measure}")
+
+    def _cblof(self, X):
+        # todo handle mismatch in cluster counts & handle detected anomalies - maybe param
+        cblof_clf = CBLOF(**self._measure_args, clustering_estimator=self._estimator)
+        cblof_clf.fit(X)
+        return cblof_clf.predict(X)
+
+    def _ldcof(self, X):
+        alpha = 0.9
+        if "alpha" in self._measure_args.keys():
+            alpha = self._measure_args["alpha"]
+
+        beta = 5
+        if "beta" in self._measure_args.keys():
+            beta = self._measure_args["beta"]
+
+        return LDCOF(alpha=alpha, beta=beta, clustering_estimator=self._estimator,
+                     anomaly_threshold=self._threshold).decision_function(X)
+
+    def _apply_threshold(self, scores):
+        pass  # todo
+
+    def _custom_measure(self, X):
+        self._estimator.fit(X)
+        return self._measure(X, self._estimator.labels_)
 
 
 class LDCOF:
@@ -102,21 +98,23 @@ class LDCOF:
         self.alpha = alpha
         self.beta = beta
         self.clustering_estimator = clustering_estimator
-        self.clusters = None
+        self.cluster_labels = None
         self.sorted_clusters_idx = None
         self.big_cluster_idx = None
         self.n_clusters = None
         self.n_samples = None
-        self.centers = None
+        self.n_features = None
+        self.cluster_centers = None
         self.avg_dist = None
         self.scores = None
         self.anomaly_threshold = anomaly_threshold
 
     def score(self, X):
         self.n_samples = X.shape[0]
+        self.n_features = X.shape[1]
         self.clustering_estimator.fit(X)
-        self.clusters = self.clustering_estimator.labels_
-        self.n_clusters = np.unique(self.clusters)
+        self.cluster_labels = self.clustering_estimator.labels_
+        self.n_clusters = len(np.unique(self.cluster_labels))
 
         self._calc_big_clusters()
 
@@ -128,22 +126,23 @@ class LDCOF:
 
         # helper values
         self.n_samples = X.shape[0]
-        self.clusters = self.clustering_estimator.labels_
-        self.n_clusters = np.unique(self.clusters)
+        self.n_features = X.shape[1]
+        self.cluster_labels = self.clustering_estimator.labels_
+        self.n_clusters = len(np.unique(self.cluster_labels))
 
         self._calc_big_clusters()
 
         return self._decision_function(X)
 
     def _calc_big_clusters(self):
-        cluster_size = np.bincount(self.clusters)
+        cluster_size = np.bincount(self.cluster_labels)
         # sort from largest
         self.sorted_clusters_idx = np.argsort(cluster_size * -1)
 
         alpha_cond_idx = []
         beta_cond_idx = []
 
-        for i in range(1, len(np.unique(self.clusters))):
+        for i in range(1, len(np.unique(self.cluster_labels))):
             # sum clusters up to this index
             sizes_sum = np.sum(cluster_size[self.sorted_clusters_idx[:i]])
             if sizes_sum >= self.n_samples * self.alpha:
@@ -166,32 +165,53 @@ class LDCOF:
         self.big_cluster_idx = self.sorted_clusters_idx[0:threshold]
 
     def _decision_function(self, X):
-        self._calculate_centers()
+        self._calculate_centers(X)
         avg_dist = self._calc_avg_dist_in_cluster(X)
-        nearest_c = self._dist_to_nearest_large(X)
+        nearest_c, nearest_idx = self._dist_to_nearest_large(X)
+        avg_dist_in_nearest = avg_dist[nearest_idx]
+        self.scores = np.divide(avg_dist_in_nearest, nearest_c)
+        return self.scores
 
-        self.scores = np.divide(avg_dist / nearest_c)
-
-    def _calculate_centers(self):
-        #todo
-        self.centers = np.zeros([self.n_clusters, ])
-        pass
+    def _calculate_centers(self, X):
+        if hasattr(self.clustering_estimator, "cluster_centers_"):
+            self.cluster_centers = self.clustering_estimator.cluster_centers_
+        else:
+            # calculate centers as means of all points belonging to the cluster
+            self.cluster_centers = np.zeros([self.n_clusters, self.n_features])
+            for i in range(0, self.n_clusters):
+                self.cluster_centers[i, :] = np.mean(X[np.where(self.cluster_labels == i)], axis=0)
 
     def _calc_avg_dist_in_cluster(self, X):
         avg_dist = np.zeros([self.n_clusters, ])
 
-        for c in range(1, self.n_clusters):
-            points_in_cluster = X[np.where(self.clusters == c)]
-            dists = cdist(points_in_cluster, self.centers[c])
+        for c in range(0, self.n_clusters):
+            points_in_cluster = X[np.where(self.cluster_labels == c)]
+            dists = cdist(points_in_cluster, [self.cluster_centers[c]])
             avg_dist[c] = np.average(dists)
         return avg_dist
 
     def _dist_to_nearest_large(self, X):
-        dist_nearest = np.zeros([self.n_clusters, ])
-        # for each point todo
-        # find distances to all clusters
-        # and return minimum
-        big_msk = np.isin(self.big_cluster_idx, self.clusters)
-        # for big clusters this is the distance to its own cluster
+        # dist to nearest cluster
+        n_large_clusters = len(self.big_cluster_idx)
+        dist_all = np.zeros([self.n_samples, n_large_clusters])
 
-        return dist_nearest
+        for i in range(0, n_large_clusters):
+            cluster_center = self.cluster_centers[self.big_cluster_idx[i]]
+            dist_all[:, i] = cdist([cluster_center], X)[0, :]
+
+        return np.min(dist_all, axis=1), self.big_cluster_idx[np.argmin(dist_all, axis=1)]
+
+
+if __name__ == '__main__':
+    from sklearn.cluster import Birch
+    from pyod.utils.data import generate_data
+
+    X_train, X_test, y_train, y_test = generate_data(behaviour='new', n_features=10, n_train=100, contamination=0.3)
+    X_train2, X_test2, y_train2, y_test2 = generate_data(behaviour='new', n_features=10, n_train=100, contamination=0.3,
+                                                         offset=20)
+
+    X_full = np.concatenate((X_train, X_train2))
+    b = Birch(n_clusters=10)
+    cbad = ClusterBasedAnomalyDetection(b, "ldcof")
+    res = cbad.decision_fun(X_full)
+    a = 2

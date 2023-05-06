@@ -1,9 +1,7 @@
 import pandas as pd
-import numpy as np
 
-MUSK_DIR = "../data/raw/musk"
-WINE_PATH = "../data/raw/wine/winequality-red.csv"
 
+# todo autodownload  & loading for both datasets
 
 def load_wine(path: str) -> (pd.DataFrame, pd.Series):
     """
@@ -23,4 +21,3 @@ def load_wine(path: str) -> (pd.DataFrame, pd.Series):
     X = wine.drop("quality", axis=1)
 
     return X, y
-

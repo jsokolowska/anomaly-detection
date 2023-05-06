@@ -1,5 +1,4 @@
 from sklearn.cluster import DBSCAN
-import numpy as np
 
 
 class DBSCANWrapped:
@@ -21,12 +20,10 @@ class DBSCANWrapped:
     def predict(self, X):
         preds = self._dbscan.fit_predict(X)
         self.labels_ = self._dbscan.labels_
+        #todo handling
         if (preds < 0).sum():
             raise ValueError("DBScan has marked some points as anomalies. Cannot proceed")
         return preds
 
     labels_ = property(get_labels, set_labels)
 
-
-w = DBSCANWrapped(DBSCAN())
-print(w.labels_)
