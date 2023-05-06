@@ -22,6 +22,8 @@ class ClusterBasedAnomalyDetection:
 
         :param measure_args: Additional arguments for cblof or ldcof measures. Ignored if callable is passed as dissimilarity
         measure.
+
+        :param threshold: Percent of data to be classified as inliners. 1-threshold will be classified as anomalies.
         """
         self._estimator = clustering_estimator
         self._validate_measure(dissimilarity_measure)
@@ -71,7 +73,9 @@ class ClusterBasedAnomalyDetection:
         # todo handle mismatch in cluster counts & handle detected anomalies - maybe param
         cblof_clf = CBLOF(**self._measure_args, clustering_estimator=self._estimator)
         cblof_clf.fit(X)
-        return cblof_clf.predict(X)
+        result, conf = cblof_clf.predict(X, return_confidence=True)
+
+        return conf
 
     def _ldcof(self, X):
         alpha = 0.9
@@ -83,10 +87,11 @@ class ClusterBasedAnomalyDetection:
             beta = self._measure_args["beta"]
 
         return LDCOF(alpha=alpha, beta=beta, clustering_estimator=self._estimator,
-                     anomaly_threshold=self._threshold).decision_function(X)
+                     anomaly_threshold=self._threshold).score(X)
 
     def _apply_threshold(self, scores):
-        pass  # todo
+        value_threshold = np.percentile(scores, 100 * self._threshold)
+        return (scores > value_threshold).astype('int').ravel()
 
     def _custom_measure(self, X):
         self._estimator.fit(X)
@@ -110,18 +115,6 @@ class LDCOF:
         self.anomaly_threshold = anomaly_threshold
 
     def score(self, X):
-        self.n_samples = X.shape[0]
-        self.n_features = X.shape[1]
-        self.clustering_estimator.fit(X)
-        self.cluster_labels = self.clustering_estimator.labels_
-        self.n_clusters = len(np.unique(self.cluster_labels))
-
-        self._calc_big_clusters()
-
-        # todo
-        return []
-
-    def decision_function(self, X):
         self.clustering_estimator.fit(X)
 
         # helper values
@@ -191,7 +184,6 @@ class LDCOF:
         return avg_dist
 
     def _dist_to_nearest_large(self, X):
-        # dist to nearest cluster
         n_large_clusters = len(self.big_cluster_idx)
         dist_all = np.zeros([self.n_samples, n_large_clusters])
 
@@ -201,17 +193,3 @@ class LDCOF:
 
         return np.min(dist_all, axis=1), self.big_cluster_idx[np.argmin(dist_all, axis=1)]
 
-
-if __name__ == '__main__':
-    from sklearn.cluster import Birch
-    from pyod.utils.data import generate_data
-
-    X_train, X_test, y_train, y_test = generate_data(behaviour='new', n_features=10, n_train=100, contamination=0.3)
-    X_train2, X_test2, y_train2, y_test2 = generate_data(behaviour='new', n_features=10, n_train=100, contamination=0.3,
-                                                         offset=20)
-
-    X_full = np.concatenate((X_train, X_train2))
-    b = Birch(n_clusters=10)
-    cbad = ClusterBasedAnomalyDetection(b, "ldcof")
-    res = cbad.decision_fun(X_full)
-    a = 2
