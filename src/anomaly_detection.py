@@ -6,7 +6,7 @@ __all__ = ["ClusterBasedAnomalyDetection"]
 
 
 class ClusterBasedAnomalyDetection:
-    def __init__(self, clustering_estimator, dissimilarity_measure, measure_args: dict = None, threshold=0.9):
+    def __init__(self, clustering_estimator, dissimilarity_measure, measure_args: dict = None, contamination=0.9):
         """
         Class for anomaly detection based on clustering
 
@@ -25,12 +25,14 @@ class ClusterBasedAnomalyDetection:
         :param measure_args: Additional arguments for cblof or ldcof measures. Ignored if callable is passed as dissimilarity
         measure.
 
-        :param threshold: Percent of data to be classified as inliners. 1-threshold will be classified as anomalies.
+        :param contamination: Percent of data to be classified as inliners. 1-threshold will be classified as anomalies.
         """
         self._estimator = clustering_estimator
         self._validate_measure(dissimilarity_measure)
         self._measure = dissimilarity_measure
-        self._threshold = threshold
+        # todo actually redo usages
+        self._contamination = contamination
+        self._computed_threshold = None
 
         if measure_args is None:
             self._measure_args = {}
@@ -61,6 +63,10 @@ class ClusterBasedAnomalyDetection:
         scores = self.decision_fun(X)
         return self._apply_threshold(scores)
 
+    def predict(self, X):
+        #todo implement
+        pass
+
     def _validate_measure(self, dissimilarity_measure):
         if dissimilarity_measure == "cblof":
             return
@@ -88,11 +94,11 @@ class ClusterBasedAnomalyDetection:
             beta = self._measure_args["beta"]
 
         return LDCOF(alpha=alpha, beta=beta, clustering_estimator=self._estimator,
-                     anomaly_threshold=self._threshold).score(X)
+                     anomaly_threshold=self._contamination).score(X)
 
     def _apply_threshold(self, scores):
-        value_threshold = np.percentile(scores, 100 * self._threshold)
-        return (scores > value_threshold).astype('int').ravel()
+        self._computed_threshold = np.percentile(scores, 100 * self._contamination)
+        return (scores > self._computed_threshold).astype('int').ravel()
 
     def _custom_measure(self, X):
         self._estimator.fit(X)
@@ -193,4 +199,3 @@ class LDCOF:
             dist_all[:, i] = cdist([cluster_center], X)[0, :]
 
         return np.min(dist_all, axis=1), self.big_cluster_idx[np.argmin(dist_all, axis=1)]
-
