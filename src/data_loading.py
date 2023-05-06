@@ -20,4 +20,4 @@ def load_wine(path: str) -> (pd.DataFrame, pd.Series):
     y = wine['quality'].apply(lambda x: map_to_anomaly(x))
     X = wine.drop("quality", axis=1)
 
-    return X, y
+    return X.values, y.values

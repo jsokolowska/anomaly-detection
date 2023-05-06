@@ -2,6 +2,8 @@ import numpy as np
 from pyod.models.cblof import CBLOF
 from scipy.spatial.distance import cdist
 
+__all__ = ["ClusterBasedAnomalyDetection"]
+
 
 class ClusterBasedAnomalyDetection:
     def __init__(self, clustering_estimator, dissimilarity_measure, measure_args: dict = None, threshold=0.9):
@@ -73,9 +75,8 @@ class ClusterBasedAnomalyDetection:
         # todo handle mismatch in cluster counts & handle detected anomalies - maybe param
         cblof_clf = CBLOF(**self._measure_args, clustering_estimator=self._estimator)
         cblof_clf.fit(X)
-        result, conf = cblof_clf.predict(X, return_confidence=True)
-
-        return conf
+        scores = cblof_clf.decision_function(X)
+        return scores
 
     def _ldcof(self, X):
         alpha = 0.9
