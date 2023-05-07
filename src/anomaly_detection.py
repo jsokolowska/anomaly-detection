@@ -1,12 +1,17 @@
 import numpy as np
 from pyod.models.cblof import CBLOF
 from scipy.spatial.distance import cdist
+from sklearn.metrics import roc_auc_score
+from typing import Union
 
 __all__ = ["ClusterBasedAnomalyDetection"]
 
+from sklearn.base import BaseEstimator
 
-class ClusterBasedAnomalyDetection:
-    def __init__(self, clustering_estimator, dissimilarity_measure, measure_args: dict = None, contamination=0.1):
+
+class ClusterBasedAnomalyDetection(BaseEstimator):
+    def __init__(self, clustering_estimator: BaseEstimator, dissimilarity_measure: Union[str, callable],
+                 alpha: float = 0.9, beta: float = 5, n_clusters: int = 10, contamination: float = 0.1):
         """
         Class for anomaly detection based on clustering
 
@@ -29,36 +34,55 @@ class ClusterBasedAnomalyDetection:
         """
         self.clustering_estimator = clustering_estimator
         self._validate_measure(dissimilarity_measure)
-        self.measure = dissimilarity_measure
+        self.dissimilarity_measure = dissimilarity_measure
         self.contamination = contamination
 
         self._chosen_measure = None
 
-        if measure_args is None:
-            self._measure_args = {}
-        else:
-            self._measure_args = measure_args
+        self.alpha = alpha
+        self.beta = beta
+        self.n_clusters = n_clusters
 
-    def fit(self, X):
+    def set_params(self, **params):
+        """Set the parameters of this estimator and nested clustering algorithm.
+
+        :param params : dict
+        Estimator parameters.
+        :return self : estimator instance
+        """
+        # set clustering alg params
+        clustering_estimator_params = self.clustering_estimator.get_params()
+        clustering_params = {k: v for k, v in params.items() if k in clustering_estimator_params.keys()}
+        self.clustering_estimator.set_params(**clustering_params)
+
+        current_params = self.get_params()
+        new_values = {k: v for k, v in params.items() if k in current_params.keys()}
+        super().set_params(**new_values)
+
+        return self
+
+    def fit(self, X, y):
         """
         Performs anomaly detection and sets constants on data
         --------------------------------
         :param X: data to perform anomaly detection for
+        :param y: present for compliance with sklearn API
         :return: np.ndarray of 0s (not an anomaly) and 1s (an anomaly)
         """
-        if self.measure == "cblof":
-            self._chosen_measure = CBLOF(**self._measure_args, clustering_estimator=self.clustering_estimator,
+        if self.dissimilarity_measure == "cblof":
+            self._chosen_measure = CBLOF(alpha=self.alpha, beta=self.beta, n_clusters=self.n_clusters,
+                                         clustering_estimator=self.clustering_estimator,
                                          contamination=self.contamination)
-        elif self.measure == "ldcof":
-            self._chosen_measure = LDCOF(**self._measure_args, clustering_estimator=self.clustering_estimator,
+        elif self.dissimilarity_measure == "ldcof":
+            self._chosen_measure = LDCOF(alpha=self.alpha, beta=self.beta,
+                                         clustering_estimator=self.clustering_estimator,
                                          contamination=self.contamination)
         else:
-            self._chosen_measure = CustomMeasure(self.clustering_estimator, self.measure)
-
+            self._chosen_measure = CustomMeasure(self.clustering_estimator, self.dissimilarity_measure)
         self._chosen_measure.fit(X)
         return self
 
-    def decision_fun(self, X):
+    def decision_function(self, X):
         """
         Perform anomaly detection and get dissimilarity scores
         --------------------------------
@@ -83,6 +107,10 @@ class ClusterBasedAnomalyDetection:
             return
         else:
             raise ValueError(f"Expected callable or one of [cblof, ldcof], but got {dissimilarity_measure}")
+
+    def score(self, X, y):
+        y_score = self.decision_function(X)
+        return roc_auc_score(y, y_score)
 
 
 class LDCOF:
