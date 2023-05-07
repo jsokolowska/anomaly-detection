@@ -3,6 +3,8 @@ from pyod.models.cblof import CBLOF
 from scipy.spatial.distance import cdist
 from sklearn.metrics import roc_auc_score
 from typing import Union
+import logging
+import traceback
 
 __all__ = ["ClusterBasedAnomalyDetection"]
 
@@ -69,17 +71,23 @@ class ClusterBasedAnomalyDetection(BaseEstimator):
         :param y: present for compliance with sklearn API
         :return: np.ndarray of 0s (not an anomaly) and 1s (an anomaly)
         """
-        if self.dissimilarity_measure == "cblof":
-            self._chosen_measure = CBLOF(alpha=self.alpha, beta=self.beta, n_clusters=self.n_clusters,
-                                         clustering_estimator=self.clustering_estimator,
-                                         contamination=self.contamination)
-        elif self.dissimilarity_measure == "ldcof":
-            self._chosen_measure = LDCOF(alpha=self.alpha, beta=self.beta,
-                                         clustering_estimator=self.clustering_estimator,
-                                         contamination=self.contamination)
-        else:
-            self._chosen_measure = CustomMeasure(self.clustering_estimator, self.dissimilarity_measure)
-        self._chosen_measure.fit(X)
+        try:
+            if self.dissimilarity_measure == "cblof":
+                self._chosen_measure = CBLOF(alpha=self.alpha, beta=self.beta, n_clusters=self.n_clusters,
+                                             clustering_estimator=self.clustering_estimator,
+                                             contamination=self.contamination)
+            elif self.dissimilarity_measure == "ldcof":
+                self._chosen_measure = LDCOF(alpha=self.alpha, beta=self.beta,
+                                             clustering_estimator=self.clustering_estimator,
+                                             contamination=self.contamination)
+            else:
+                self._chosen_measure = CustomMeasure(self.clustering_estimator, self.dissimilarity_measure)
+            self._chosen_measure.fit(X)
+        except Exception as e:
+            logging.error(traceback.format_exception(e))
+            if type(e) is ValueError:
+                raise e
+            logging.error(traceback.format_exception(e))
         return self
 
     def decision_function(self, X):
@@ -133,20 +141,26 @@ class LDCOF:
         self._computed_threshold = None
 
     def fit(self, X):
-        self.clustering_estimator.fit(X)
+        try:
+            self.clustering_estimator.fit(X)
 
-        # helper values
-        self._n_samples = X.shape[0]
-        self._n_features = X.shape[1]
-        self._cluster_labels = self.clustering_estimator.labels_
-        self._n_clusters = len(np.unique(self._cluster_labels))
+            # helper values
+            self._n_samples = X.shape[0]
+            self._n_features = X.shape[1]
+            self._cluster_labels = self.clustering_estimator.labels_
+            self._n_clusters = len(np.unique(self._cluster_labels))
 
-        self._set_big_clusters()
+            self._set_big_clusters()
 
-        self._calculate_centers(X)
-        self._calc_avg_dist_in_cluster(X)
-        scores = self._decision_function(X)
-        self._calculate_threshold(scores)
+            self._calculate_centers(X)
+            self._calc_avg_dist_in_cluster(X)
+            scores = self._decision_function(X)
+            self._calculate_threshold(scores)
+        except Exception as e:
+            logging.error(traceback.format_exception(e))
+            if type(e) is ValueError:
+                raise e
+            logging.error(traceback.format_exception(e))
         return self
 
     def decision_function(self, X):
@@ -208,19 +222,22 @@ class LDCOF:
             # calculate centers as means of all points belonging to the cluster
             self._cluster_centers = np.zeros([self._n_clusters, self._n_features])
             for i in range(0, self._n_clusters):
-                self._cluster_centers[i, :] = np.mean(X[np.where(self._cluster_labels == i)], axis=0)
+                self._cluster_centers[i, :] = np.mean(X[self._cluster_labels == i], axis=0)
 
     def _calc_avg_dist_in_cluster(self, X):
         self._avg_cluster_dist = np.zeros([self._n_clusters, ])
 
         for c in range(0, self._n_clusters):
-            points_in_cluster = X[np.where(self._cluster_labels == c)]
+            points_in_cluster = X[self._cluster_labels == c]
             dists = cdist(points_in_cluster, [self._cluster_centers[c]])
             self._avg_cluster_dist[c] = np.average(dists)
 
     def _dist_to_nearest_large(self, X):
+        if self._big_cluster_idx is None:
+            print("AAAA")
         n_large_clusters = len(self._big_cluster_idx)
-        dist_all = np.zeros([self._n_samples, n_large_clusters])
+        n_samples = X.shape[0]
+        dist_all = np.zeros([n_samples, n_large_clusters])
 
         for i in range(0, n_large_clusters):
             cluster_center = self._cluster_centers[self._big_cluster_idx[i]]
@@ -251,3 +268,44 @@ class CustomMeasure:
 
     def predict(self, X):
         return self.measure.predict(X)
+
+
+if __name__ == "__main__":
+    # for testing purposes - to be removed
+    import pandas as pd
+    from sklearn.model_selection import GridSearchCV
+    from sklearn.cluster import Birch
+    from sklearn.model_selection import StratifiedKFold
+    from data_loading import load_wine, load_musk
+
+    WINE_PATH = "./wine/winequality-red.csv"
+    MUSK_PATH = "./musk/clean2.data"
+
+    df = pd.DataFrame(index=["musk", "wine"], columns=["birch-lcdof", "birch-cblof", "dbscan-lcdof", "dbscan-cblof"])
+    # Params for wine
+    param_grid = {
+        "alpha": [0.8, 0.9, 0.95],
+        "beta": [3, 5, 10],
+        "contamination": [0.1, 0.07, 0.05, 0.03],
+        "n_clusters": [10, 3, 4, 9, 16, 25],
+        "threshold": [0.2, 0.5, 0.7]
+    }
+    N_SPLITS = 5
+    X, y = load_wine(WINE_PATH)
+    skf = StratifiedKFold(n_splits=N_SPLITS, random_state=91, shuffle=True)
+    clustering_algs = [("birch", Birch())]
+    measures = ["ldcof", "cblof"]
+    datasets = {"musk": load_musk(MUSK_PATH), "wine": load_wine(WINE_PATH)}
+
+    for dataset_name, values in datasets.items():
+        X, y = values
+        for name, algorithm in clustering_algs:
+            for measure in measures:
+                cbad = ClusterBasedAnomalyDetection(clustering_estimator=algorithm, dissimilarity_measure=measure)
+
+                search = GridSearchCV(param_grid=param_grid, estimator=cbad, scoring="roc_auc", cv=5, n_jobs=1,
+                                      verbose=4)
+                search.fit(X, y)
+                print(f"[{name}/{measure}/{dataset_name}] Best params: {search.best_params_}")
+                print(f"[{name}/{measure}/{dataset_name}] Best score: {search.best_score_}")
+                df[f"{name}-{measure}"][dataset_name] = search.best_params_
