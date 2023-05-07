@@ -128,7 +128,7 @@ class LDCOF:
         return self._process_scores(scores)
 
     def _is_fitted(self):
-        return self._big_cluster_idx & self._cluster_centers
+        return self._big_cluster_idx is not None and self._cluster_centers is not None
 
     def _calculate_threshold(self, scores):
         self._computed_threshold = np.percentile(scores, 100 * (1 - self.contamination))
