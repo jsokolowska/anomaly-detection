@@ -102,6 +102,7 @@ class LDCOF:
         self._n_features = None
         self._cluster_centers = None
         self._avg_cluster_dist = None
+        self._computed_threshold = None
 
     def fit(self, X):
         self.clustering_estimator.fit(X)
@@ -116,6 +117,8 @@ class LDCOF:
 
         self._calculate_centers(X)
         self._calc_avg_dist_in_cluster(X)
+        scores = self._decision_function(X)
+        self._calculate_threshold(scores)
         return self
 
     def decision_function(self, X):
