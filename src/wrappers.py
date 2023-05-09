@@ -1,8 +1,7 @@
 from sklearn.cluster import DBSCAN
-from sklearn.base import BaseEstimator
 
 
-class DBSCANWrapped(BaseEstimator):
+class DBSCANWrapped:
     def __init__(self, dbscan: DBSCAN):
         self._dbscan = dbscan
         self.labels_ = []
@@ -35,5 +34,22 @@ class DBSCANWrapped(BaseEstimator):
         self._dbscan.set_params(**params)
 
         return self
+
+    def get_params(self, deep=True):
+        """
+        Get parameters for wrapped estimator.
+
+        Parameters
+        ----------
+        deep : bool, default=True
+            If True, will return the parameters for this estimator and
+            contained subobjects that are estimators.
+
+        Returns
+        -------
+        params : dict
+            Parameter names mapped to their values.
+        """
+        return self._dbscan.get_params(deep)
 
     labels_ = property(get_labels, set_labels)
