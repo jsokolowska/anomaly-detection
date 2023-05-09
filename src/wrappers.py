@@ -1,7 +1,8 @@
 from sklearn.cluster import DBSCAN
+from sklearn.base import BaseEstimator
 
 
-class DBSCANWrapped:
+class DBSCANWrapped(BaseEstimator):
     def __init__(self, dbscan: DBSCAN):
         self._dbscan = dbscan
         self.labels_ = []
@@ -36,4 +37,3 @@ class DBSCANWrapped:
         return self
 
     labels_ = property(get_labels, set_labels)
-
