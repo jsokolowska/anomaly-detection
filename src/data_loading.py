@@ -1,5 +1,6 @@
 import pandas as pd
 from sklearn.utils import shuffle
+from sklearn.model_selection import train_test_split
 
 INLINERS_SIZE = 4750
 OUTLIERS_SIZE = 250
@@ -21,8 +22,9 @@ def load_wine(path: str) -> (pd.DataFrame, pd.Series):
     wine = pd.read_csv(path, delimiter=';')
     y = wine['quality'].apply(lambda x: map_to_anomaly(x))
     X = wine.drop("quality", axis=1)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=1290)
 
-    return X.values, y.values
+    return X_train.values, X_test.values, y_train.values, y_test.values
 
 
 def load_musk(path):
@@ -43,6 +45,9 @@ def load_musk(path):
     non_musk_downsampled = non_musk.sample(n=OUTLIERS_SIZE, random_state=58)
     musk_downsampled = musk.sample(n=INLINERS_SIZE, random_state=12)
     combined = pd.concat([non_musk_downsampled, musk_downsampled])
-    combined = shuffle(combined)
 
-    return combined.drop(columns=[0]), combined[0]
+    X = combined.drop(columns=[0])
+    y = combined[0]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=2901)
+
+    return X_train.values, X_test.values, y_train.values, y_test.values
