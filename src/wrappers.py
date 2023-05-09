@@ -1,14 +1,15 @@
 from sklearn.cluster import DBSCAN
+from sklearn.base import BaseEstimator
 
 
-class DBSCANWrapped:
-    def __init__(self, dbscan: DBSCAN):
-        self._dbscan = dbscan
+class DBSCANWrapped(BaseEstimator):
+    def __init__(self, **kwargs):
+        self._dbscan = DBSCAN(**kwargs)
         self.labels_ = []
 
     def get_labels(self):
         print("Calling get")
-        return self.labels_
+        return self._labels
 
     def set_labels(self, l):
         self._labels = l
