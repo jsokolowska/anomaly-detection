@@ -13,7 +13,7 @@ from sklearn.base import BaseEstimator
 
 class ClusterBasedAnomalyDetection(BaseEstimator):
     def __init__(self, clustering_estimator: BaseEstimator, dissimilarity_measure: Union[str, callable],
-                 alpha: float = 0.9, beta: float = 5, n_clusters: int = 10, contamination: float = 0.1):
+                 alpha: float = 0.9, beta: int = 5, n_clusters: int = 10, contamination: float = 0.1):
         """
         Class for anomaly detection based on clustering
 
@@ -71,23 +71,17 @@ class ClusterBasedAnomalyDetection(BaseEstimator):
         :param y: present for compliance with sklearn API
         :return: np.ndarray of 0s (not an anomaly) and 1s (an anomaly)
         """
-        try:
-            if self.dissimilarity_measure == "cblof":
-                self._chosen_measure = CBLOF(alpha=self.alpha, beta=self.beta, n_clusters=self.n_clusters,
-                                             clustering_estimator=self.clustering_estimator,
-                                             contamination=self.contamination)
-            elif self.dissimilarity_measure == "ldcof":
-                self._chosen_measure = LDCOF(alpha=self.alpha, beta=self.beta,
-                                             clustering_estimator=self.clustering_estimator,
-                                             contamination=self.contamination)
-            else:
-                self._chosen_measure = CustomMeasure(self.clustering_estimator, self.dissimilarity_measure)
-            self._chosen_measure.fit(X)
-        except Exception as e:
-            logging.error(traceback.format_exception(e))
-            if type(e) is ValueError:
-                raise e
-            logging.error(traceback.format_exception(e))
+        if self.dissimilarity_measure == "cblof":
+            self._chosen_measure = CBLOF(alpha=self.alpha, beta=self.beta, n_clusters=self.n_clusters,
+                                         clustering_estimator=self.clustering_estimator,
+                                         contamination=self.contamination)
+        elif self.dissimilarity_measure == "ldcof":
+            self._chosen_measure = LDCOF(alpha=self.alpha, beta=self.beta,
+                                         clustering_estimator=self.clustering_estimator,
+                                         contamination=self.contamination)
+        else:
+            self._chosen_measure = CustomMeasure(self.clustering_estimator, self.dissimilarity_measure)
+        self._chosen_measure.fit(X)
         return self
 
     def decision_function(self, X):
